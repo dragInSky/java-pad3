@@ -1,6 +1,8 @@
 package MyFirstTestAppSpringBoot.service;
 
+import MyFirstTestAppSpringBoot.exception.UnsupportedCodeException;
 import MyFirstTestAppSpringBoot.exception.ValidationFailedException;
+import MyFirstTestAppSpringBoot.model.Request;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.BindingResult;
@@ -23,6 +25,13 @@ public class RequestValidationService implements ValidationService {
                     .map(error -> error.getField() + ": " + error.getDefaultMessage())
                     .collect(Collectors.joining("; "));
             throw new ValidationFailedException(message);
+        }
+    }
+
+    @Override
+    public void isSupported(Request request) throws UnsupportedCodeException {
+        if ("123".equals(request.getUid())) {
+            throw new UnsupportedCodeException("uid 123 не поддерживается");
         }
     }
 }

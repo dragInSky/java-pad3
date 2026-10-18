@@ -7,41 +7,37 @@ import MyFirstTestAppSpringBoot.model.ErrorCodes;
 import MyFirstTestAppSpringBoot.model.ErrorMessages;
 import MyFirstTestAppSpringBoot.model.Request;
 import MyFirstTestAppSpringBoot.model.Response;
+import MyFirstTestAppSpringBoot.service.AnnualBonusService;
 import MyFirstTestAppSpringBoot.service.ModifyRequestService;
 import MyFirstTestAppSpringBoot.service.ModifyResponseService;
 import MyFirstTestAppSpringBoot.service.ValidationService;
 import MyFirstTestAppSpringBoot.util.DateTimeUtil;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.validation.BindingResult;
+
 import java.util.Date;
 
 @Slf4j
 @RestController
+@RequiredArgsConstructor
 public class MyController {
 
     private final ValidationService validationService;
+    @Qualifier("ModifySystemTimeResponseService")
     private final ModifyResponseService modifyResponseService;
+    @Qualifier("ModifySourceRequestService")
     private final ModifyRequestService modifySourceRequestService;
+    @Qualifier("ModifySystemNameRequestService")
     private final ModifyRequestService modifySystemNameRequestService;
-
-    @Autowired
-    public MyController(ValidationService validationService,
-                        @Qualifier("ModifySystemTimeResponseService") ModifyResponseService modifyResponseService,
-                        @Qualifier("ModifySourceRequestService") ModifyRequestService modifySourceRequestService,
-                        @Qualifier("ModifySystemNameRequestService") ModifyRequestService modifySystemNameRequestService) {
-        this.validationService = validationService;
-        this.modifyResponseService = modifyResponseService;
-        this.modifySourceRequestService = modifySourceRequestService;
-        this.modifySystemNameRequestService = modifySystemNameRequestService;
-    }
+    private final AnnualBonusService annualBonusService;
 
     @PostMapping(value = "/feedback")
     public ResponseEntity<Response> feedback(@Valid @RequestBody Request request,
@@ -52,44 +48,23 @@ public class MyController {
         request.setSystemTime(DateTimeUtil.getCustomFormat().format(new Date()));
         log.info("request received by Service 1 at {}", request.getSystemTime());
 
-        Response response = Response.builder()
-                .uid(request.getUid())
-                .operationUid(request.getOperationUid())
-                .systemTime(DateTimeUtil.getCustomFormat().format(new Date()))
-                .code(Codes.SUCCESS)
-                .errorCode(ErrorCodes.EMPTY)
-                .errorMessage(ErrorMessages.EMPTY)
-                .build();
-
+        Response response = Response.success(request);
         log.info("response created: {}", response);
 
         try {
             validationService.isValid(bindingResult);
+            validationService.isSupported(request);
             log.info("request uid={} passed validation", request.getUid());
-            if ("123".equals(request.getUid())) {
-                throw new UnsupportedCodeException("uid 123 не поддерживается");
-            }
+            calculateBonuses(request, response);
         } catch (ValidationFailedException e) {
             log.error("ValidationFailedException: {}", e.getMessage());
-            response.setCode(Codes.FAILED);
-            response.setErrorCode(ErrorCodes.VALIDATION_EXCEPTION);
-            response.setErrorMessage(ErrorMessages.VALIDATION);
-            log.info("response after validation error: {}", response);
-            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+            return failed(response, ErrorCodes.VALIDATION_EXCEPTION, ErrorMessages.VALIDATION, HttpStatus.BAD_REQUEST);
         } catch (UnsupportedCodeException e) {
             log.error("UnsupportedCodeException: {}", e.getMessage());
-            response.setCode(Codes.FAILED);
-            response.setErrorCode(ErrorCodes.UNSUPPORTED_EXCEPTION);
-            response.setErrorMessage(ErrorMessages.UNSUPPORTED);
-            log.info("response after unsupported code error: {}", response);
-            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+            return failed(response, ErrorCodes.UNSUPPORTED_EXCEPTION, ErrorMessages.UNSUPPORTED, HttpStatus.BAD_REQUEST);
         } catch (Exception e) {
             log.error("Unknown exception", e);
-            response.setCode(Codes.FAILED);
-            response.setErrorCode(ErrorCodes.UNKNOWN_EXCEPTION);
-            response.setErrorMessage(ErrorMessages.UNKNOWN);
-            log.info("response after unknown error: {}", response);
-            return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+            return failed(response, ErrorCodes.UNKNOWN_EXCEPTION, ErrorMessages.UNKNOWN, HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
         response = modifyResponseService.modify(response);
@@ -98,6 +73,23 @@ public class MyController {
         modifySourceRequestService.modify(request);
         modifySystemNameRequestService.modify(request);
 
-        return new ResponseEntity<>(response, HttpStatus.OK);
+        return ResponseEntity.ok(response);
+    }
+
+    private void calculateBonuses(Request request, Response response) {
+        response.setAnnualBonus(annualBonusService.calculate(request.getPosition(),
+                request.getSalary(), request.getBonus(), request.getWorkDays()));
+        response.setQuarterlyBonus(annualBonusService.calculateQuarterly(request.getPosition(),
+                request.getSalary(), request.getBonus(), request.getWorkDays()));
+        log.info("response after bonus calculation: {}", response);
+    }
+
+    private ResponseEntity<Response> failed(Response response, ErrorCodes errorCode,
+                                            ErrorMessages errorMessage, HttpStatus status) {
+        response.setCode(Codes.FAILED);
+        response.setErrorCode(errorCode);
+        response.setErrorMessage(errorMessage);
+        log.info("response after error: {}", response);
+        return new ResponseEntity<>(response, status);
     }
 }
