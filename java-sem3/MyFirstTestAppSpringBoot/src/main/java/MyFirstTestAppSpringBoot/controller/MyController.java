@@ -7,6 +7,7 @@ import MyFirstTestAppSpringBoot.model.ErrorCodes;
 import MyFirstTestAppSpringBoot.model.ErrorMessages;
 import MyFirstTestAppSpringBoot.model.Request;
 import MyFirstTestAppSpringBoot.model.Response;
+import MyFirstTestAppSpringBoot.service.ModifyRequestService;
 import MyFirstTestAppSpringBoot.service.ModifyResponseService;
 import MyFirstTestAppSpringBoot.service.ValidationService;
 import MyFirstTestAppSpringBoot.util.DateTimeUtil;
@@ -28,12 +29,18 @@ public class MyController {
 
     private final ValidationService validationService;
     private final ModifyResponseService modifyResponseService;
+    private final ModifyRequestService modifySourceRequestService;
+    private final ModifyRequestService modifySystemNameRequestService;
 
     @Autowired
     public MyController(ValidationService validationService,
-                        @Qualifier("ModifySystemTimeResponseService") ModifyResponseService modifyResponseService) {
+                        @Qualifier("ModifySystemTimeResponseService") ModifyResponseService modifyResponseService,
+                        @Qualifier("ModifySourceRequestService") ModifyRequestService modifySourceRequestService,
+                        @Qualifier("ModifySystemNameRequestService") ModifyRequestService modifySystemNameRequestService) {
         this.validationService = validationService;
         this.modifyResponseService = modifyResponseService;
+        this.modifySourceRequestService = modifySourceRequestService;
+        this.modifySystemNameRequestService = modifySystemNameRequestService;
     }
 
     @PostMapping(value = "/feedback")
@@ -41,6 +48,9 @@ public class MyController {
                                              BindingResult bindingResult) {
 
         log.info("request: {}", request);
+
+        request.setSystemTime(DateTimeUtil.getCustomFormat().format(new Date()));
+        log.info("request received by Service 1 at {}", request.getSystemTime());
 
         Response response = Response.builder()
                 .uid(request.getUid())
@@ -84,6 +94,9 @@ public class MyController {
 
         response = modifyResponseService.modify(response);
         log.info("response to send: {}", response);
+
+        modifySourceRequestService.modify(request);
+        modifySystemNameRequestService.modify(request);
 
         return new ResponseEntity<>(response, HttpStatus.OK);
     }
